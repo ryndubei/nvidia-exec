@@ -56,6 +56,7 @@ class Config:
         self.kernel_modules = [v.strip() for v in config.get("kernel_modules", "").split(",")]
         self.device_classes = [v.strip() for v in config.get("device_classes", "").split(",")]
         self.device_vendors = [v.strip() for v in config.get("device_vendors", "").split(",")]
+        self.device_businfos = [("pci@" + v.strip()) for v in config.get("device_businfos", "").split(",")]
         self.egl_vendor_path = config.get("egl_vendor_path", "").strip()
         self.egl_vendor_apply = config.get("egl_vendor_apply", "") == "true"
         self.kill_on_off = config.get("kill_on_off", "") == "true"
@@ -72,7 +73,8 @@ class Config:
     def match_device(self, device: dict[str, Any]):
         class_: str = device.get("class", "").lower()
         vendor: str = device.get("vendor", "").lower()
-        return class_ in self.device_classes and any(v in vendor for v in self.device_vendors)
+        businfo: str = device.get("businfo", "").lower()
+        return (businfo in self.device_businfos) or (class_ in self.device_classes and any(v in vendor for v in self.device_vendors))
 
     def apply_egl_changes(self):
         if self.egl_vendor_path == "":
@@ -124,7 +126,10 @@ class Pci:
             if parent is not None and self.config.match_device(child):
                 device = Pci.Device()
                 matches.append(device)
-                device.name = f"{child['vendor']} - {child['product']}"
+                try:
+                    device.name = f"{child['vendor']} - {child['product']}"
+                except KeyError:
+                    device.name = child["businfo"][4:]
                 device.bus = child["businfo"][4:]
                 device.bridge = parent["businfo"][4:]
             for grandchild in child.get("children", []):
