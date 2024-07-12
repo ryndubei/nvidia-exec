@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 from typing import Any
+import errno
 import json
 import logging as log
 import os
@@ -183,6 +184,26 @@ class Pci:
             log.info(f"kill process {name} - {pid}")
             subprocess.run(f"kill {pid}", shell=True)
 
+def notify(msg):
+    """
+    Send a message to systemd
+    """
+    try:
+        socket_path = os.getenv("NOTIFY_SOCKET")
+
+        match socket_path[0]:
+            case "@": socket_path = "\0" + socket_path[1:]
+            case "/": pass
+            case _: raise OSError(errno.EAFNOSUPPORT, "Unsupported socket type")
+
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM | socket.SOCK_CLOEXEC) as sock:
+            sock.connect(socket_path)
+            sock.sendall(msg)
+    except Exception as e:
+        log.error(f"could not notify systemd: {e}")
+
+def notify_ready():
+    notify(b"READY=1")
 
 class Daemon:
     """
@@ -210,6 +231,7 @@ class Daemon:
         os.chmod(UNIX_SOCKET, 0o777)
         server.listen(1)
         log.info(f"server started at {UNIX_SOCKET}")
+        notify_ready()
         while True:
             client, addr = server.accept()
             log.info(f"client connected {addr}")
